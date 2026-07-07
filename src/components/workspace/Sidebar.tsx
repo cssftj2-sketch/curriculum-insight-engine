@@ -111,10 +111,7 @@ function TreeItem({
         }`}
         style={{ paddingRight: depth * 12 + 6 }}
       >
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className="w-4 shrink-0 text-muted-foreground"
-        >
+        <button onClick={() => setOpen((v) => !v)} className="w-4 shrink-0 text-muted-foreground">
           {hasChildren ? (open ? "▾" : "◂") : ""}
         </button>
         <button
@@ -148,7 +145,13 @@ function TreeItem({
       {open && hasChildren && (
         <ul className="space-y-0.5">
           {page.children.map((c) => (
-            <TreeItem key={c.id} page={c} depth={depth + 1} selectedId={selectedId} onSelect={onSelect} />
+            <TreeItem
+              key={c.id}
+              page={c}
+              depth={depth + 1}
+              selectedId={selectedId}
+              onSelect={onSelect}
+            />
           ))}
         </ul>
       )}

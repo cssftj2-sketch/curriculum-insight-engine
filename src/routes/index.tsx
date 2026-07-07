@@ -13,9 +13,7 @@ export const Route = createFileRoute("/")({
 
 function WorkspacePage() {
   const workspace = useWorkspace();
-  const [selectedId, setSelectedId] = useState<string | null>(
-    workspace.pages[0]?.id ?? null,
-  );
+  const [selectedId, setSelectedId] = useState<string | null>(workspace.pages[0]?.id ?? null);
 
   const selected = selectedId ? findPage(workspace.pages, selectedId) : null;
 

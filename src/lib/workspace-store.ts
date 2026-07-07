@@ -21,8 +21,7 @@ const KEY = "curriculum-workspace-v1";
 
 // ---------- seed ----------
 
-const uid = () =>
-  (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2, 12));
+const uid = () => globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2, 12);
 
 const p = (
   icon: string,

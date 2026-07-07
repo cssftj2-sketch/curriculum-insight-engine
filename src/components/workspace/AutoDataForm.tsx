@@ -30,9 +30,7 @@ export function AutoDataForm({
     <div className="space-y-5">
       {entries.map(([key, value]) => (
         <div key={key}>
-          <label className="mb-1 block text-xs font-semibold text-muted-foreground">
-            {key}
-          </label>
+          <label className="mb-1 block text-xs font-semibold text-muted-foreground">{key}</label>
           <FieldEditor value={value} onChange={(v) => set(key, v)} />
         </div>
       ))}
@@ -40,13 +38,7 @@ export function AutoDataForm({
   );
 }
 
-function FieldEditor({
-  value,
-  onChange,
-}: {
-  value: unknown;
-  onChange: (v: unknown) => void;
-}) {
+function FieldEditor({ value, onChange }: { value: unknown; onChange: (v: unknown) => void }) {
   if (typeof value === "string") {
     return value.length > 60 ? (
       <textarea
@@ -125,7 +117,7 @@ function FieldEditor({
       value.reduce((set, row) => {
         Object.keys(row).forEach((k) => set.add(k));
         return set;
-      }, new Set<string>())
+      }, new Set<string>()),
     );
     return (
       <div className="space-y-2">
@@ -158,9 +150,7 @@ function FieldEditor({
           </div>
         ))}
         <button
-          onClick={() =>
-            onChange([...value, Object.fromEntries(columns.map((c) => [c, ""]))])
-          }
+          onClick={() => onChange([...value, Object.fromEntries(columns.map((c) => [c, ""]))])}
           className="rounded-md border border-dashed border-input px-3 py-1 text-xs text-muted-foreground hover:bg-accent"
         >
           + إضافة صف
@@ -172,10 +162,7 @@ function FieldEditor({
   if (isPlainObject(value)) {
     return (
       <div className="rounded-md border border-border p-3">
-        <AutoDataForm
-          data={value as Record<string, unknown>}
-          onChange={(next) => onChange(next)}
-        />
+        <AutoDataForm data={value as Record<string, unknown>} onChange={(next) => onChange(next)} />
       </div>
     );
   }

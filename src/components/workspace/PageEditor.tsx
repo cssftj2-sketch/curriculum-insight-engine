@@ -39,7 +39,10 @@ export function PageEditor({
         {crumbs.map((c, i) => (
           <span key={c.id} className="flex items-center gap-1">
             {i > 0 && <span>/</span>}
-            <button onClick={() => onSelect(c.id)} className="hover:text-foreground hover:underline">
+            <button
+              onClick={() => onSelect(c.id)}
+              className="hover:text-foreground hover:underline"
+            >
               {c.icon} {c.title}
             </button>
           </span>
@@ -69,7 +72,9 @@ export function PageEditor({
             key={t}
             onClick={() => setTab(t)}
             className={`border-b-2 px-3 py-1.5 text-sm ${
-              tab === t ? "border-primary font-semibold" : "border-transparent text-muted-foreground"
+              tab === t
+                ? "border-primary font-semibold"
+                : "border-transparent text-muted-foreground"
             }`}
           >
             {t === "content" ? "المحتوى" : "JSON"}
@@ -143,15 +148,30 @@ export function PageEditor({
         <ul className="divide-y divide-border rounded-md border border-border">
           {page.children.map((c, i) => (
             <li key={c.id} className="flex items-center gap-2 px-3 py-2 text-sm">
-              <button onClick={() => onSelect(c.id)} className="flex flex-1 items-center gap-2 text-right hover:underline">
+              <button
+                onClick={() => onSelect(c.id)}
+                className="flex flex-1 items-center gap-2 text-right hover:underline"
+              >
                 <span>{c.icon}</span>
                 <span>{c.title}</span>
                 {c.children.length > 0 && (
                   <span className="text-xs text-muted-foreground">({c.children.length})</span>
                 )}
               </button>
-              <button onClick={() => actions.movePage(c.id, "up")} disabled={i === 0} className="text-xs text-muted-foreground disabled:opacity-30">▲</button>
-              <button onClick={() => actions.movePage(c.id, "down")} disabled={i === page.children.length - 1} className="text-xs text-muted-foreground disabled:opacity-30">▼</button>
+              <button
+                onClick={() => actions.movePage(c.id, "up")}
+                disabled={i === 0}
+                className="text-xs text-muted-foreground disabled:opacity-30"
+              >
+                ▲
+              </button>
+              <button
+                onClick={() => actions.movePage(c.id, "down")}
+                disabled={i === page.children.length - 1}
+                className="text-xs text-muted-foreground disabled:opacity-30"
+              >
+                ▼
+              </button>
               <button
                 onClick={() => confirm(`حذف "${c.title}"؟`) && actions.deletePage(c.id)}
                 className="text-xs text-muted-foreground hover:text-destructive"

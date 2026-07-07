@@ -1,10 +1,10 @@
 /**
  * Curriculum Insight Engine — Hybrid Tier-Based Parser
- * 
+ *
  * Problem: PDF-to-markdown conversion flattens all headings to H1, destroying
  * the semantic hierarchy. Chapters, lessons, subsections, and section markers
  * all appear as `#` level.
- * 
+ *
  * Solution: Infer "effective tier" from content patterns instead of trusting
  * raw ATX heading levels. Build a semantic classification layer that runs
  * before tree construction.
@@ -16,38 +16,38 @@
 
 export interface RawHeading {
   line: number;
-  rawLevel: number;      // 1–6 from markdown
+  rawLevel: number; // 1–6 from markdown
   title: string;
 }
 
 export type Tier = 0 | 1 | 2 | 3 | 4 | 5;
 
 export type HeadingType =
-  | 'front_matter'
-  | 'toc'
-  | 'chapter'
-  | 'learning_goals'
-  | 'numbered_lesson'
-  | 'section_marker'
-  | 'subsection'
-  | 'content_block'
-  | 'other';
+  | "front_matter"
+  | "toc"
+  | "chapter"
+  | "learning_goals"
+  | "numbered_lesson"
+  | "section_marker"
+  | "subsection"
+  | "content_block"
+  | "other";
 
 export interface ClassifiedHeading extends RawHeading {
   tier: Tier;
   type: HeadingType;
-  confidence: 'strong' | 'weak';  // strong = resets context; weak = anchors to ancestor
+  confidence: "strong" | "weak"; // strong = resets context; weak = anchors to ancestor
 }
 
 export interface CurriculumNode {
   id: string;
-  level: number;        // effective depth in tree
+  level: number; // effective depth in tree
   type: HeadingType;
   title: string;
-  content: string;       // body text until next heading
+  content: string; // body text until next heading
   children: CurriculumNode[];
-  images: string[];      // ![...](...) references
-  paragraphs: string[];  // non-heading text blocks
+  images: string[]; // ![...](...) references
+  paragraphs: string[]; // non-heading text blocks
 }
 
 export interface ParseResult {
@@ -70,52 +70,52 @@ export interface ParseResult {
 const CONFIG = {
   // Section markers that repeat per chapter (template headings)
   sectionMarkers: [
-    'اكتشف',
-    'اكتسب طرائق',
-    'أقوم تعلّماتي',
-    'أتوّلم الإدماج',
-    'استحضر مكتسباتي',
-    'أحوصل تعلّماتي',
-    'أتمرن',
-    'أتعمّق',
-    'أستعمل تكنولوجيات الإعلام',
-    'أستعمل تكنولوجيات',
-    'وضعية تقويم',
-    'وضعية تتويج',
-    'وضعية تشوييم',
+    "اكتشف",
+    "اكتسب طرائق",
+    "أقوم تعلّماتي",
+    "أتوّلم الإدماج",
+    "استحضر مكتسباتي",
+    "أحوصل تعلّماتي",
+    "أتمرن",
+    "أتعمّق",
+    "أستعمل تكنولوجيات الإعلام",
+    "أستعمل تكنولوجيات",
+    "وضعية تقويم",
+    "وضعية تتويج",
+    "وضعية تشوييم",
   ],
 
   // Known chapter titles (from official TOC) — used for validation
   knownChapters: [
-    'الأعداد الطبيعية والأعداد العشرية',
-    'الحساب على الأعداد الطبيعية والأعداد العشرية: الجمع والطرح',
-    'الحساب على الأعداد الطبيعية والأعداد العشرية: الضرب والقسمة',
-    'الكتابات الكسرية',
-    'الأعداد النسبية',
-    'الحساب الحرفي',
-    'التناسبية',
-    'تنظيم معطيات',
-    'التوازي والتعامد',
-    'الأشكال المستوية',
-    'السطوح المستوية',
-    'الزوايا',
-    'التناظر المحوري',
-    'متوازي المستطيلات والمكعب',
+    "الأعداد الطبيعية والأعداد العشرية",
+    "الحساب على الأعداد الطبيعية والأعداد العشرية: الجمع والطرح",
+    "الحساب على الأعداد الطبيعية والأعداد العشرية: الضرب والقسمة",
+    "الكتابات الكسرية",
+    "الأعداد النسبية",
+    "الحساب الحرفي",
+    "التناسبية",
+    "تنظيم معطيات",
+    "التوازي والتعامد",
+    "الأشكال المستوية",
+    "السطوح المستوية",
+    "الزوايا",
+    "التناظر المحوري",
+    "متوازي المستطيلات والمكعب",
   ],
 
   // Front matter keywords
   frontMatterMarkers: [
-    'الطبعة',
-    'ردمك',
-    'موفم للنشر',
-    'ENAG',
-    'elbassair',
-    'الجمهورية الجزائرية',
-    'وزارة التربية الوطنية',
-    'الإشراف التربوي',
-    'رئيس المشروع',
-    'المؤلفون',
-    'كتاب مدرسي معتمد',
+    "الطبعة",
+    "ردمك",
+    "موفم للنشر",
+    "ENAG",
+    "elbassair",
+    "الجمهورية الجزائرية",
+    "وزارة التربية الوطنية",
+    "الإشراف التربوي",
+    "رئيس المشروع",
+    "المؤلفون",
+    "كتاب مدرسي معتمد",
   ],
 
   // Content block keywords (weak classification)
@@ -137,23 +137,19 @@ const CONFIG = {
 
   // Sub-section patterns
   subsectionPatterns: [
-    /^\d+\.\d+/,           // "1.2", "3.14"
-    /^\(\d+\)/,            // "(1)", "(2)"
-    /^\d+\)/,              // "2)", "3)" — parenthesized numbers without opening paren
+    /^\d+\.\d+/, // "1.2", "3.14"
+    /^\(\d+\)/, // "(1)", "(2)"
+    /^\d+\)/, // "2)", "3)" — parenthesized numbers without opening paren
   ],
 
   // Numbered lesson: starts with digit(s) followed by separator
-  numberedLessonPattern: /^\d+[\)\.\s]/,
+  numberedLessonPattern: /^\d+[).\s]/,
 
   // Circled digits (Unicode 2460–2473)
   circledDigitPattern: /[①-⑳]/,
 
   // Assessment situation guidance sub-headings
-  assessmentGuidance: [
-    'قراءة وفهم الوضعية',
-    'تحليل الوضعية',
-    'تنفيذ استراتيجية الحل',
-  ],
+  assessmentGuidance: ["قراءة وفهم الوضعية", "تحليل الوضعية", "تنفيذ استراتيجية الحل"],
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -168,49 +164,49 @@ function classifyHeading(raw: RawHeading, context: ParserContext): ClassifiedHea
 
   // Tier 0: Front matter
   if (isFrontMatter(title)) {
-    return { ...raw, tier: 0, type: 'front_matter', confidence: 'strong' };
+    return { ...raw, tier: 0, type: "front_matter", confidence: "strong" };
   }
 
   // Tier 0: Table of contents
   if (isTOC(title)) {
-    return { ...raw, tier: 0, type: 'toc', confidence: 'strong' };
+    return { ...raw, tier: 0, type: "toc", confidence: "strong" };
   }
 
   // Tier 1: Chapter
   if (isChapter(title, context)) {
-    return { ...raw, tier: 1, type: 'chapter', confidence: 'strong' };
+    return { ...raw, tier: 1, type: "chapter", confidence: "strong" };
   }
 
   // Tier 2: Learning goals ("سأتعلم في هذا الباب")
-  if (title.includes('سأتعلم في هذا الباب') || title.includes('ساتعلم في هذا الباب')) {
-    return { ...raw, tier: 2, type: 'learning_goals', confidence: 'strong' };
+  if (title.includes("سأتعلم في هذا الباب") || title.includes("ساتعلم في هذا الباب")) {
+    return { ...raw, tier: 2, type: "learning_goals", confidence: "strong" };
   }
 
   // Tier 2: Numbered lesson
   if (isNumberedLesson(title)) {
-    return { ...raw, tier: 2, type: 'numbered_lesson', confidence: 'strong' };
+    return { ...raw, tier: 2, type: "numbered_lesson", confidence: "strong" };
   }
 
   // Tier 2: Section marker (template headings)
   if (isSectionMarker(title)) {
-    return { ...raw, tier: 2, type: 'section_marker', confidence: 'strong' };
+    return { ...raw, tier: 2, type: "section_marker", confidence: "strong" };
   }
 
   // ── WEAK CLASSIFICATIONS (anchor to nearest strong ancestor) ───────────────
 
   // Tier 3: Assessment situation guidance
   if (isAssessmentGuidance(title)) {
-    return { ...raw, tier: 3, type: 'subsection', confidence: 'weak' };
+    return { ...raw, tier: 3, type: "subsection", confidence: "weak" };
   }
 
   // Tier 3: Sub-section patterns
   if (isSubsection(title)) {
-    return { ...raw, tier: 3, type: 'subsection', confidence: 'weak' };
+    return { ...raw, tier: 3, type: "subsection", confidence: "weak" };
   }
 
   // Tier 4: Content blocks
   if (isContentBlock(title)) {
-    return { ...raw, tier: 4, type: 'content_block', confidence: 'weak' };
+    return { ...raw, tier: 4, type: "content_block", confidence: "weak" };
   }
 
   // ── FALLBACK: trust raw level with sanity checks ──────────────────────────
@@ -221,8 +217,8 @@ function classifyHeading(raw: RawHeading, context: ParserContext): ClassifiedHea
     return {
       ...raw,
       tier: inferredTier,
-      type: inferredTier <= 2 ? 'subsection' : 'content_block',
-      confidence: 'weak',
+      type: inferredTier <= 2 ? "subsection" : "content_block",
+      confidence: "weak",
     };
   }
 
@@ -230,24 +226,24 @@ function classifyHeading(raw: RawHeading, context: ParserContext): ClassifiedHea
   return {
     ...raw,
     tier: 3,
-    type: 'other',
-    confidence: 'weak',
+    type: "other",
+    confidence: "weak",
   };
 }
 
 // ── Detection helpers ────────────────────────────────────────────────────────
 
 function isFrontMatter(title: string): boolean {
-  return CONFIG.frontMatterMarkers.some(m => title.includes(m));
+  return CONFIG.frontMatterMarkers.some((m) => title.includes(m));
 }
 
 function isTOC(title: string): boolean {
-  return title === 'الفهرس' || title.includes('الفهرس');
+  return title === "الفهرس" || title.includes("الفهرس");
 }
 
 function isChapter(title: string, ctx: ParserContext): boolean {
   // Exact match against known chapters
-  if (CONFIG.knownChapters.some(kc => title.includes(kc) || kc.includes(title))) {
+  if (CONFIG.knownChapters.some((kc) => title.includes(kc) || kc.includes(title))) {
     return true;
   }
 
@@ -256,19 +252,34 @@ function isChapter(title: string, ctx: ParserContext): boolean {
   const hasDigits = /\d/.test(title);
   const isMarker = isSectionMarker(title);
   const isFront = isFrontMatter(title);
-  const isBroad = title.length > 10 && title.includes(' ');
+  const isBroad = title.length > 10 && title.includes(" ");
 
   // Must not be numbered, marked, or front matter
   if (hasDigits || isMarker || isFront) return false;
 
   // Must look like a curriculum topic (contains academic keywords)
   const academicKeywords = [
-    'الأعداد', 'الحساب', 'الكتابات', 'الكسور', 'النسبية',
-    'الحرفي', 'التناسبية', 'المعطيات', 'التوازي', 'التعامد',
-    'الأشكال', 'السطوح', 'الزوايا', 'التناظر', 'المستطيلات',
-    'المكعب', 'الهندسة', 'القياس', 'الإحصاء',
+    "الأعداد",
+    "الحساب",
+    "الكتابات",
+    "الكسور",
+    "النسبية",
+    "الحرفي",
+    "التناسبية",
+    "المعطيات",
+    "التوازي",
+    "التعامد",
+    "الأشكال",
+    "السطوح",
+    "الزوايا",
+    "التناظر",
+    "المستطيلات",
+    "المكعب",
+    "الهندسة",
+    "القياس",
+    "الإحصاء",
   ];
-  const hasAcademicKeyword = academicKeywords.some(kw => title.includes(kw));
+  const hasAcademicKeyword = academicKeywords.some((kw) => title.includes(kw));
 
   return isBroad && hasAcademicKeyword;
 }
@@ -287,19 +298,19 @@ function isNumberedLesson(title: string): boolean {
 }
 
 function isSectionMarker(title: string): boolean {
-  return CONFIG.sectionMarkers.some(sm => title.includes(sm));
+  return CONFIG.sectionMarkers.some((sm) => title.includes(sm));
 }
 
 function isAssessmentGuidance(title: string): boolean {
-  return CONFIG.assessmentGuidance.some(ag => title.includes(ag));
+  return CONFIG.assessmentGuidance.some((ag) => title.includes(ag));
 }
 
 function isSubsection(title: string): boolean {
-  return CONFIG.subsectionPatterns.some(p => p.test(title));
+  return CONFIG.subsectionPatterns.some((p) => p.test(title));
 }
 
 function isContentBlock(title: string): boolean {
-  return CONFIG.contentBlockPatterns.some(p => p.test(title));
+  return CONFIG.contentBlockPatterns.some((p) => p.test(title));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -318,7 +329,7 @@ function createNode(
   classified: ClassifiedHeading,
   content: string,
   images: string[],
-  paragraphs: string[]
+  paragraphs: string[],
 ): CurriculumNode {
   return {
     id: `node-${classified.line}`,
@@ -332,13 +343,16 @@ function createNode(
   };
 }
 
-function buildTree(classified: ClassifiedHeading[], bodyText: Map<number, { content: string; images: string[]; paragraphs: string[] }>): CurriculumNode {
+function buildTree(
+  classified: ClassifiedHeading[],
+  bodyText: Map<number, { content: string; images: string[]; paragraphs: string[] }>,
+): CurriculumNode {
   const root: CurriculumNode = {
-    id: 'root',
+    id: "root",
     level: 0,
-    type: 'other',
-    title: 'root',
-    content: '',
+    type: "other",
+    title: "root",
+    content: "",
     children: [],
     images: [],
     paragraphs: [],
@@ -347,21 +361,21 @@ function buildTree(classified: ClassifiedHeading[], bodyText: Map<number, { cont
   const ctx: ParserContext = {
     stack: [root],
     lastStrongLevel: 0,
-    lastStrongType: 'other',
+    lastStrongType: "other",
     chapterCount: 0,
     inFrontMatter: true,
   };
 
   for (const ch of classified) {
-    const body = bodyText.get(ch.line) || { content: '', images: [], paragraphs: [] };
+    const body = bodyText.get(ch.line) || { content: "", images: [], paragraphs: [] };
     const node = createNode(ch, body.content, body.images, body.paragraphs);
 
     // ── Handle chapter boundary: reset stack ─────────────────────────────────
-    if (ch.confidence === 'strong' && ch.type === 'chapter') {
+    if (ch.confidence === "strong" && ch.type === "chapter") {
       ctx.chapterCount++;
-      ctx.stack = [root];           // Pop everything back to root
+      ctx.stack = [root]; // Pop everything back to root
       ctx.lastStrongLevel = 1;
-      ctx.lastStrongType = 'chapter';
+      ctx.lastStrongType = "chapter";
       ctx.inFrontMatter = false;
       root.children.push(node);
       ctx.stack.push(node);
@@ -378,7 +392,7 @@ function buildTree(classified: ClassifiedHeading[], bodyText: Map<number, { cont
     }
 
     // ── Handle strong non-chapter headings ───────────────────────────────────
-    if (ch.confidence === 'strong') {
+    if (ch.confidence === "strong") {
       // Pop to appropriate ancestor
       const targetLevel = ch.tier - 1;
       while (ctx.stack.length > targetLevel + 1) {
@@ -423,7 +437,7 @@ interface PreprocessedDocument {
 }
 
 function preprocessMarkdown(md: string): PreprocessedDocument {
-  const lines = md.split('\n');
+  const lines = md.split("\n");
   const headings: RawHeading[] = [];
   const bodyText = new Map<number, { content: string; images: string[]; paragraphs: string[] }>();
 
@@ -437,7 +451,7 @@ function preprocessMarkdown(md: string): PreprocessedDocument {
 
   function flushBody(lineNum: number) {
     if (currentHeadingLine !== null) {
-      const content = currentContent.join('\n').trim();
+      const content = currentContent.join("\n").trim();
       bodyText.set(currentHeadingLine, {
         content,
         images: [...currentImages],
@@ -472,7 +486,7 @@ function preprocessMarkdown(md: string): PreprocessedDocument {
 
       // Collect non-empty paragraphs
       const trimmed = line.trim();
-      if (trimmed && !trimmed.startsWith('![') && !trimmed.startsWith('|')) {
+      if (trimmed && !trimmed.startsWith("![") && !trimmed.startsWith("|")) {
         currentParagraphs.push(trimmed);
       }
     }
@@ -496,12 +510,12 @@ export function parseCurriculum(md: string): ParseResult {
   const ctx: ParserContext = {
     stack: [],
     lastStrongLevel: 0,
-    lastStrongType: 'other',
+    lastStrongType: "other",
     chapterCount: 0,
     inFrontMatter: true,
   };
 
-  const classified = headings.map(h => classifyHeading(h, ctx));
+  const classified = headings.map((h) => classifyHeading(h, ctx));
 
   // Step 3: Build tree
   const root = buildTree(classified, bodyText);
@@ -512,7 +526,7 @@ export function parseCurriculum(md: string): ParseResult {
   return { root, stats };
 }
 
-function computeStats(root: CurriculumNode, classified: ClassifiedHeading[]): ParseResult['stats'] {
+function computeStats(root: CurriculumNode, classified: ClassifiedHeading[]): ParseResult["stats"] {
   let chapters = 0;
   let lessons = 0;
   let sectionMarkers = 0;
@@ -520,18 +534,18 @@ function computeStats(root: CurriculumNode, classified: ClassifiedHeading[]): Pa
   let images = 0;
 
   function walk(node: CurriculumNode) {
-    if (node.type === 'chapter') chapters++;
-    if (node.type === 'numbered_lesson') lessons++;
-    if (node.type === 'section_marker') sectionMarkers++;
-    if (node.type === 'content_block') contentBlocks++;
+    if (node.type === "chapter") chapters++;
+    if (node.type === "numbered_lesson") lessons++;
+    if (node.type === "section_marker") sectionMarkers++;
+    if (node.type === "content_block") contentBlocks++;
     images += node.images.length;
     node.children.forEach(walk);
   }
 
   walk(root);
 
-  const strongCount = classified.filter(c => c.confidence === 'strong').length;
-  const weakCount = classified.filter(c => c.confidence === 'weak').length;
+  const strongCount = classified.filter((c) => c.confidence === "strong").length;
+  const weakCount = classified.filter((c) => c.confidence === "weak").length;
 
   return {
     totalHeadings: classified.length,
@@ -549,7 +563,7 @@ function computeStats(root: CurriculumNode, classified: ClassifiedHeading[]): Pa
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function debugPrintTree(node: CurriculumNode, indent = 0): string {
-  const prefix = '  '.repeat(indent);
+  const prefix = "  ".repeat(indent);
   const icon = getNodeIcon(node.type);
   let out = `${prefix}${icon} [L${node.level}] ${node.title}\n`;
   for (const child of node.children) {
@@ -560,17 +574,17 @@ export function debugPrintTree(node: CurriculumNode, indent = 0): string {
 
 function getNodeIcon(type: HeadingType): string {
   const icons: Record<HeadingType, string> = {
-    front_matter: '📄',
-    toc: '📑',
-    chapter: '📚',
-    learning_goals: '🎯',
-    numbered_lesson: '📖',
-    section_marker: '🔖',
-    subsection: '📋',
-    content_block: '📝',
-    other: '•',
+    front_matter: "📄",
+    toc: "📑",
+    chapter: "📚",
+    learning_goals: "🎯",
+    numbered_lesson: "📖",
+    section_marker: "🔖",
+    subsection: "📋",
+    content_block: "📝",
+    other: "•",
   };
-  return icons[type] || '•';
+  return icons[type] || "•";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
