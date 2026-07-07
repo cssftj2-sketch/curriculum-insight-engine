@@ -8,6 +8,9 @@
  * Solution: Infer "effective tier" from content patterns instead of trusting
  * raw ATX heading levels. Build a semantic classification layer that runs
  * before tree construction.
+ *
+ * Supports: Algerian Gen-2 math textbooks — Year 1, Year 2, Year 4
+ * (and is designed to extend to Year 3 and other subjects).
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -63,44 +66,118 @@ export interface ParseResult {
   };
 }
 
+export interface TOCEntry {
+  page: number;
+  number: number | null; // chapter number (1, 2, 3…)
+  title: string; // chapter title
+  normalizedTitle: string; // for fuzzy matching
+  category: string; // "أنشطة عددية", "أنشطة هندسية", etc.
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// CONFIGURATION — Algerian Curriculum (Year 1 Middle School, Gen 2)
+// ARABIC TEXT NORMALIZATION (Phase 4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Normalize Arabic text for robust fuzzy matching.
+ * Strips diacritics, normalizes alef/taa/yaa variants, collapses whitespace.
+ */
+export function normalizeArabic(text: string): string {
+  return (
+    text
+      // Strip Arabic diacritics (tashkeel): fathah, kasrah, dammah, sukun,
+      // shadda, tanwin (fathatan, kasratan, dammatan), maddah, superscript alef
+      .replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/g, "")
+      // Normalize alef variants: أ إ آ ٱ → ا
+      .replace(/[أإآٱ]/g, "ا")
+      // Normalize taa marbuta → haa (for matching)
+      .replace(/ة/g, "ه")
+      // Normalize alef maqsura → yaa
+      .replace(/ى/g, "ي")
+      // Collapse whitespace
+      .replace(/\s+/g, " ")
+      .trim()
+  );
+}
+
+/**
+ * Fuzzy match two Arabic strings. Returns true if they are
+ * "close enough" after normalization. Uses substring containment
+ * for flexibility with OCR-mangled titles.
+ */
+function fuzzyArabicMatch(a: string, b: string): boolean {
+  const na = normalizeArabic(a);
+  const nb = normalizeArabic(b);
+  if (na === nb) return true;
+  if (na.length === 0 || nb.length === 0) return false;
+
+  // One contains the other (handles truncated OCR titles)
+  if (na.includes(nb) || nb.includes(na)) return true;
+
+  // Check Levenshtein-like similarity for short strings
+  // For longer strings, check word overlap ratio
+  const wordsA = na.split(" ").filter(Boolean);
+  const wordsB = nb.split(" ").filter(Boolean);
+  if (wordsA.length >= 2 && wordsB.length >= 2) {
+    const overlap = wordsA.filter((w) => wordsB.includes(w)).length;
+    const minLen = Math.min(wordsA.length, wordsB.length);
+    // ≥60% word overlap → match
+    if (overlap / minLen >= 0.6) return true;
+  }
+
+  return false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONFIGURATION — Algerian Curriculum (Multi-Year, Gen 2)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const CONFIG = {
-  // Section markers that repeat per chapter (template headings)
+  // Section markers that repeat per chapter (template headings).
+  // Merged across Year 1, Year 2, and Year 4 variants + common OCR errors.
   sectionMarkers: [
+    // ── Year 1 markers ──
     "اكتشف",
+    "أكتشف",
     "اكتسب طرائق",
     "أقوم تعلّماتي",
+    "أقوم تعلماتي",
     "أتوّلم الإدماج",
     "استحضر مكتسباتي",
     "أحوصل تعلّماتي",
+    "أحوصل تعلماتي",
     "أتمرن",
     "أتعمّق",
+    "أتعمق",
     "أستعمل تكنولوجيات الإعلام",
     "أستعمل تكنولوجيات",
     "وضعية تقويم",
     "وضعية تتويج",
     "وضعية تشوييم",
-  ],
 
-  // Known chapter titles (from official TOC) — used for validation
-  knownChapters: [
-    "الأعداد الطبيعية والأعداد العشرية",
-    "الحساب على الأعداد الطبيعية والأعداد العشرية: الجمع والطرح",
-    "الحساب على الأعداد الطبيعية والأعداد العشرية: الضرب والقسمة",
-    "الكتابات الكسرية",
-    "الأعداد النسبية",
-    "الحساب الحرفي",
-    "التناسبية",
-    "تنظيم معطيات",
-    "التوازي والتعامد",
-    "الأشكال المستوية",
-    "السطوح المستوية",
-    "الزوايا",
-    "التناظر المحوري",
-    "متوازي المستطيلات والمكعب",
+    // ── Year 2 markers ──
+    "أنشطة",
+    "أوظف تعلماتي",
+    "أوظف تعلّماتي",
+    "أوفلك تعلماتي", // OCR variant
+    "أوكد تعلماتي", // OCR variant
+    "أدمج تعلّماتي",
+    "أدمج تعلماتي",
+    "أوظف تكنولوجيات الإعلام والاتصال",
+
+    // ── Year 4 markers ──
+    "أستعد",
+    "معارف",
+    "طرائق",
+    "طرانق", // OCR variant
+    "أؤكد تعلّماتي",
+    "أؤكد تعلماتي",
+
+    // ── Shared / additional ──
+    "وضعية للتقويم",
+    "وضعية إدماجية",
+    "أجزائه تعلماتي", // OCR variant of أقوّم تعلماتي
+    "مقدم تطلعات", // OCR variant
   ],
 
   // Front matter keywords
@@ -115,24 +192,38 @@ const CONFIG = {
     "الإشراف التربوي",
     "رئيس المشروع",
     "المؤلفون",
+    "المؤلّفون",
     "كتاب مدرسي معتمد",
+    "تقديم الكتاب",
+    "استعمال الكتاب",
+    "المصادر",
+    "الصور:",
+    "معجم المصطلحات",
   ],
+
+  // TOC heading identifiers
+  tocMarkers: ["الفهرس", "المفهوم"],
 
   // Content block keywords (weak classification)
   contentBlockPatterns: [
-    /^مثال\s*\d*\s*:/,
-    /^ملاحظة\s*\d*\s*:/,
-    /^طريقة\s*\d*\s*:/,
+    /^مثال\s*\d*\s*:?/,
+    /^ملاحظة\s*\d*\s*:?/,
+    /^طريقة\s*\d*\s*:?/,
     /^نص\s*:/,
     /^حل\s*:/,
     /^حل مختصر\s*:/,
     /^تمرين\s*\d*/,
     /^نشاط\s*\d*/,
-    /^توجيهات\s*:/,
-    /^خاصية\s*\d*\s*:/,
+    /^توجيهات\s*:?/,
+    /^خاصية\s*\d*\s*:?/,
     /^دوري الآن/,
     /^دورن الآن/,
-    /^أمثلة\s*:/,
+    /^أمثلة\s*:?/,
+    /^تعريف\s*:?/,
+    /^قاعدة\s*:?/,
+    /^وضعية\b/,
+    /^التعميق$/,
+    /^تحد[يّ]\s*/,
   ],
 
   // Sub-section patterns
@@ -149,16 +240,117 @@ const CONFIG = {
   circledDigitPattern: /[①-⑳]/,
 
   // Assessment situation guidance sub-headings
-  assessmentGuidance: ["قراءة وفهم الوضعية", "تحليل الوضعية", "تنفيذ استراتيجية الحل"],
+  assessmentGuidance: [
+    "قراءة وفهم الوضعية",
+    "تحليل الوضعية",
+    "تنفيذ استراتيجية الحل",
+    "توجهات تحليل الوضعية",
+    "توجيهات تحليل الوضعية",
+  ],
 } as const;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TOC EXTRACTION ENGINE (Phase 1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Extract the Table of Contents from the markdown document.
+ * Supports two formats:
+ * 1. Table format (Year 2/4): `| pageNum | N - title | category? |`
+ * 2. Text-list format (Year 1): `pageNum N title` lines under `# الفهرس`
+ */
+function extractTOC(lines: string[], headings: RawHeading[]): TOCEntry[] {
+  const entries: TOCEntry[] = [];
+
+  // Find the TOC heading
+  const tocHeading = headings.find((h) => {
+    const norm = normalizeArabic(h.title);
+    return CONFIG.tocMarkers.some((m) => normalizeArabic(m) === norm || norm.includes(normalizeArabic(m)));
+  });
+
+  if (!tocHeading) return entries;
+
+  const tocStartLine = tocHeading.line; // 1-indexed
+  // Find the next heading after TOC
+  const nextHeading = headings.find((h) => h.line > tocStartLine);
+  const tocEndLine = nextHeading ? nextHeading.line - 1 : lines.length;
+
+  // Extract lines in the TOC region
+  const tocLines = lines.slice(tocStartLine, tocEndLine); // already 0-indexed after slice
+
+  // Try table format first: | pageNum | title | category? |
+  const tableRowRegex = /^\|\s*(\d+)\s*\|\s*(.+?)\s*\|\s*(.*?)\s*\|/;
+  // Match chapter entries with optional number prefix: "N - title" or just "title"
+  const chapterEntryRegex = /^(\d+)\s*[-–]\s*(.+)/;
+
+  let lastCategory = "";
+
+  for (const line of tocLines) {
+    const tableMatch = line.match(tableRowRegex);
+    if (tableMatch) {
+      const page = parseInt(tableMatch[1], 10);
+      const rawTitle = tableMatch[2].trim();
+      const category = tableMatch[3].trim() || lastCategory;
+      if (category) lastCategory = category;
+
+      // Skip non-chapter rows (toc header, "تقديم الكتاب", "استعمال الكتاب", etc.)
+      if (isNaN(page)) continue;
+      if (CONFIG.frontMatterMarkers.some((m) => rawTitle.includes(m))) continue;
+      if (rawTitle.includes("مصادر")) continue;
+
+      // Parse "N - title" format
+      const entryMatch = rawTitle.match(chapterEntryRegex);
+      if (entryMatch) {
+        const num = parseInt(entryMatch[1], 10);
+        const title = entryMatch[2].trim();
+        entries.push({
+          page,
+          number: num,
+          title,
+          normalizedTitle: normalizeArabic(title),
+          category,
+        });
+      }
+      continue;
+    }
+
+    // Try text-list format: "pageNum chapterNum title"
+    // e.g. "7 1 الأعداد الطبيعية والأعداد العشرية"
+    const textMatch = line.trim().match(/^(\d+)\s+(\d+)\s+(.+)/);
+    if (textMatch) {
+      const page = parseInt(textMatch[1], 10);
+      const num = parseInt(textMatch[2], 10);
+      const title = textMatch[3].trim();
+
+      // Skip correction/appendix lines (e.g. "205 15 • تصحيحات")
+      if (title.startsWith("•")) continue;
+
+      entries.push({
+        page,
+        number: num,
+        title,
+        normalizedTitle: normalizeArabic(title),
+        category: lastCategory,
+      });
+    }
+  }
+
+  return entries;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TIER INFERENCE ENGINE
 // ─────────────────────────────────────────────────────────────────────────────
 
-function classifyHeading(raw: RawHeading, context: ParserContext): ClassifiedHeading {
+function classifyHeading(
+  raw: RawHeading,
+  context: ParserContext,
+  toc: TOCEntry[],
+  headings: RawHeading[],
+): ClassifiedHeading {
   const title = raw.title.trim();
   const rawLevel = raw.rawLevel;
+  const normalizedTitle = normalizeArabic(title);
 
   // ── STRONG CLASSIFICATIONS (override raw level) ─────────────────────────
 
@@ -172,13 +364,13 @@ function classifyHeading(raw: RawHeading, context: ParserContext): ClassifiedHea
     return { ...raw, tier: 0, type: "toc", confidence: "strong" };
   }
 
-  // Tier 1: Chapter
-  if (isChapter(title, context)) {
+  // Tier 1: Chapter — TOC-anchored or heuristic
+  if (isChapter(title, normalizedTitle, context, toc, raw, headings)) {
     return { ...raw, tier: 1, type: "chapter", confidence: "strong" };
   }
 
   // Tier 2: Learning goals ("سأتعلم في هذا الباب")
-  if (title.includes("سأتعلم في هذا الباب") || title.includes("ساتعلم في هذا الباب")) {
+  if (normalizedTitle.includes(normalizeArabic("سأتعلم في هذا الباب"))) {
     return { ...raw, tier: 2, type: "learning_goals", confidence: "strong" };
   }
 
@@ -234,30 +426,84 @@ function classifyHeading(raw: RawHeading, context: ParserContext): ClassifiedHea
 // ── Detection helpers ────────────────────────────────────────────────────────
 
 function isFrontMatter(title: string): boolean {
-  return CONFIG.frontMatterMarkers.some((m) => title.includes(m));
+  return CONFIG.frontMatterMarkers.some(
+    (m) => title.includes(m) || normalizeArabic(title).includes(normalizeArabic(m)),
+  );
 }
 
 function isTOC(title: string): boolean {
-  return title === "الفهرس" || title.includes("الفهرس");
+  const norm = normalizeArabic(title);
+  return CONFIG.tocMarkers.some((m) => {
+    const normM = normalizeArabic(m);
+    return norm === normM || norm.includes(normM);
+  });
 }
 
-function isChapter(title: string, ctx: ParserContext): boolean {
-  // Exact match against known chapters
-  if (CONFIG.knownChapters.some((kc) => title.includes(kc) || kc.includes(title))) {
+function isChapter(
+  title: string,
+  normalizedTitle: string,
+  ctx: ParserContext,
+  toc: TOCEntry[],
+  raw: RawHeading,
+  headings: RawHeading[],
+): boolean {
+  // ── Strategy 1: TOC-anchored matching (strongest signal) ─────────────────
+  if (toc.length > 0) {
+    const matchesToc = toc.some((entry) => fuzzyArabicMatch(entry.title, title));
+    if (matchesToc) return true;
+
+    // Year 2 pattern: `# N` (bare number H1) where N matches a TOC chapter number,
+    // AND the next heading is an H2 whose title matches the TOC entry.
+    if (/^\d+$/.test(title)) {
+      const num = parseInt(title, 10);
+      const tocEntry = toc.find((e) => e.number === num);
+      if (tocEntry) {
+        // Check if next heading matches this TOC entry's title
+        const nextH = headings.find((h) => h.line > raw.line);
+        if (nextH && fuzzyArabicMatch(tocEntry.title, nextH.title)) {
+          return true;
+        }
+      }
+    }
+
+    // When TOC is available, do NOT fall through to the broad heuristic.
+    // This prevents false positives from subsection titles that contain academic keywords.
+    return false;
+  }
+
+  // ── Strategy 2: Known chapter exact match (fallback when no TOC) ─────────
+  // Hard-coded known chapters for Year 1 (the only one without a parseable TOC)
+  const knownChapters = [
+    "الأعداد الطبيعية والأعداد العشرية",
+    "الحساب على الأعداد الطبيعية والأعداد العشرية: الجمع والطرح",
+    "الحساب على الأعداد الطبيعية والأعداد العشرية: الضرب والقسمة",
+    "الكتابات الكسرية",
+    "الأعداد النسبية",
+    "الحساب الحرفي",
+    "التناسبية",
+    "تنظيم معطيات",
+    "التوازي والتعامد",
+    "الأشكال المستوية",
+    "السطوح المستوية",
+    "الزوايا",
+    "التناظر المحوري",
+    "متوازي المستطيلات والمكعب",
+  ];
+
+  if (knownChapters.some((kc) => fuzzyArabicMatch(kc, title))) {
     return true;
   }
 
-  // Heuristic: broad Arabic topic, no digits, not a section marker,
-  // reasonable length, and appears after we've seen some content
+  // ── Strategy 3: Academic keyword heuristic (weakest, only when no TOC) ───
   const hasDigits = /\d/.test(title);
   const isMarker = isSectionMarker(title);
   const isFront = isFrontMatter(title);
-  const isBroad = title.length > 10 && title.includes(" ");
+  const isBroad = title.length > 15 && title.includes(" ");
 
   // Must not be numbered, marked, or front matter
   if (hasDigits || isMarker || isFront) return false;
 
-  // Must look like a curriculum topic (contains academic keywords)
+  // Must look like a curriculum topic
   const academicKeywords = [
     "الأعداد",
     "الحساب",
@@ -278,31 +524,68 @@ function isChapter(title: string, ctx: ParserContext): boolean {
     "الهندسة",
     "القياس",
     "الإحصاء",
+    "المعادلات",
+    "المتراجحات",
+    "الدوال",
+    "الأشعة",
+    "الانسحاب",
+    "الدوران",
+    "المضلعات",
   ];
-  const hasAcademicKeyword = academicKeywords.some((kw) => title.includes(kw));
+  const hasAcademicKeyword = academicKeywords.some((kw) => normalizedTitle.includes(normalizeArabic(kw)));
+
+  // Additional guard: title must have ≥3 words (single/two-word titles are subsections)
+  const wordCount = title.split(/\s+/).filter(Boolean).length;
+  if (wordCount < 3) return false;
 
   return isBroad && hasAcademicKeyword;
 }
 
 function isNumberedLesson(title: string): boolean {
+  // Reject bare numbers: "1", "23" — these are page numbers or chapter numbers (Year 2 style)
+  if (/^\d+$/.test(title)) return false;
+
+  // Reject math expressions: "2 5 - 7 + 5 =", "30-8+2=?"
+  // A numbered lesson should have Arabic text after the number, not operators
+  if (/^\d+\s*[\d+\-×÷=<>]/.test(title)) return false;
+  if (/[=+×÷]/.test(title) && !/[\u0600-\u06FF]/.test(title.replace(/^\d+[).\s]*/, ""))) {
+    return false;
+  }
+
   // Standard: "1 أكون اعدادا", "2 الكسور العشرية"
-  if (CONFIG.numberedLessonPattern.test(title)) return true;
+  if (CONFIG.numberedLessonPattern.test(title)) {
+    // Extra check: after the number+separator, there should be Arabic content
+    const afterNumber = title.replace(/^\d+[).\s]*/, "").trim();
+    if (afterNumber.length > 0 && /[\u0600-\u06FF]/.test(afterNumber)) {
+      return true;
+    }
+    return false;
+  }
 
   // Circled digits: "① استعمل جميع الأرقام"
   if (CONFIG.circledDigitPattern.test(title)) return true;
 
   // Arabic-Indic digits: "١ التعرية على جدول تناسبية"
-  if (/^[٠-٩]+/.test(title)) return true;
+  if (/^[٠-٩]+\s/.test(title)) return true;
+
+  // Dash-numbered: "3-1 الحساب الحرفي" — these are sub-lessons, not chapters
+  if (/^\d+-\d+\s/.test(title)) return true;
 
   return false;
 }
 
 function isSectionMarker(title: string): boolean {
-  return CONFIG.sectionMarkers.some((sm) => title.includes(sm));
+  const norm = normalizeArabic(title);
+  return CONFIG.sectionMarkers.some((sm) => {
+    const normSm = normalizeArabic(sm);
+    // Exact match or starts-with (section markers are often the full title)
+    return norm === normSm || norm.startsWith(normSm);
+  });
 }
 
 function isAssessmentGuidance(title: string): boolean {
-  return CONFIG.assessmentGuidance.some((ag) => title.includes(ag));
+  const norm = normalizeArabic(title);
+  return CONFIG.assessmentGuidance.some((ag) => norm.includes(normalizeArabic(ag)));
 }
 
 function isSubsection(title: string): boolean {
@@ -366,8 +649,36 @@ function buildTree(
     inFrontMatter: true,
   };
 
-  for (const ch of classified) {
+  for (let i = 0; i < classified.length; i++) {
+    const ch = classified[i];
     const body = bodyText.get(ch.line) || { content: "", images: [], paragraphs: [] };
+
+    // ── Year 2 merge: `# N` chapter → absorb next heading's title ──────────
+    if (ch.type === "chapter" && /^\d+$/.test(ch.title) && i + 1 < classified.length) {
+      const next = classified[i + 1];
+      // Merge: use the next heading's title, skip it in the loop
+      const mergedTitle = `${ch.title} - ${next.title}`;
+      const mergedBody = bodyText.get(next.line) || body;
+      const mergedNode = createNode(
+        { ...ch, title: mergedTitle },
+        mergedBody.content,
+        [...body.images, ...mergedBody.images],
+        [...body.paragraphs, ...mergedBody.paragraphs],
+      );
+
+      ctx.chapterCount++;
+      ctx.stack = [root];
+      ctx.lastStrongLevel = 1;
+      ctx.lastStrongType = "chapter";
+      ctx.inFrontMatter = false;
+      root.children.push(mergedNode);
+      ctx.stack.push(mergedNode);
+
+      // Skip the next heading (it's been merged)
+      i++;
+      continue;
+    }
+
     const node = createNode(ch, body.content, body.images, body.paragraphs);
 
     // ── Handle chapter boundary: reset stack ─────────────────────────────────
@@ -434,6 +745,7 @@ function buildTree(
 interface PreprocessedDocument {
   headings: RawHeading[];
   bodyText: Map<number, { content: string; images: string[]; paragraphs: string[] }>;
+  lines: string[];
 }
 
 function preprocessMarkdown(md: string): PreprocessedDocument {
@@ -484,8 +796,23 @@ function preprocessMarkdown(md: string): PreprocessedDocument {
         currentImages.push(imgMatch[2]);
       }
 
-      // Collect non-empty paragraphs
+      // Phase 7: Detect learning goals in blockquotes
       const trimmed = line.trim();
+      if (
+        trimmed.startsWith(">") &&
+        (trimmed.includes("سأتعلم في هذا الباب") || trimmed.includes("ساتعلم في هذا الباب"))
+      ) {
+        // Inject a synthetic heading for blockquote learning goals
+        flushBody(i + 1);
+        headings.push({
+          line: i + 1,
+          rawLevel: 2, // Treat as H2
+          title: "سأتعلم في هذا الباب",
+        });
+        continue;
+      }
+
+      // Collect non-empty paragraphs
       if (trimmed && !trimmed.startsWith("![") && !trimmed.startsWith("|")) {
         currentParagraphs.push(trimmed);
       }
@@ -495,7 +822,7 @@ function preprocessMarkdown(md: string): PreprocessedDocument {
   // Flush last section
   flushBody(-1);
 
-  return { headings, bodyText };
+  return { headings, bodyText, lines };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -504,9 +831,12 @@ function preprocessMarkdown(md: string): PreprocessedDocument {
 
 export function parseCurriculum(md: string): ParseResult {
   // Step 1: Preprocess — extract headings and body text
-  const { headings, bodyText } = preprocessMarkdown(md);
+  const { headings, bodyText, lines } = preprocessMarkdown(md);
 
-  // Step 2: Classify — infer semantic tier for each heading
+  // Step 2: Extract TOC for chapter anchoring
+  const toc = extractTOC(lines, headings);
+
+  // Step 3: Classify — infer semantic tier for each heading
   const ctx: ParserContext = {
     stack: [],
     lastStrongLevel: 0,
@@ -515,12 +845,12 @@ export function parseCurriculum(md: string): ParseResult {
     inFrontMatter: true,
   };
 
-  const classified = headings.map((h) => classifyHeading(h, ctx));
+  const classified = headings.map((h) => classifyHeading(h, ctx, toc, headings));
 
-  // Step 3: Build tree
+  // Step 4: Build tree
   const root = buildTree(classified, bodyText);
 
-  // Step 4: Compute stats
+  // Step 5: Compute stats
   const stats = computeStats(root, classified);
 
   return { root, stats };
