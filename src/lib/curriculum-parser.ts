@@ -477,11 +477,16 @@ function isChapter(
       return false;
     }
 
-    // Case B: un-numbered heading — require tight equality of normalized titles
-    // (prevents "الكتابات الكسرية" from matching "3 من الكتابات الكسرية إلى ...")
-    const tight = toc.some(
-      (e) => e.normalizedTitle === normBody || normalizeArabic(e.title) === normalizeArabic(title),
-    );
+    // Case B: un-numbered heading — normalized equality OR high-ratio substring
+    // (allows OCR-truncated titles like "متوازي المستطيلات" ≈ "متوازي المستطيلات والمكعب")
+    const tight = toc.some((e) => {
+      if (e.normalizedTitle === normBody) return true;
+      const a = e.normalizedTitle;
+      const b = normBody;
+      if (a.length < 6 || b.length < 6) return false;
+      const [short, long] = a.length < b.length ? [a, b] : [b, a];
+      return long.includes(short) && short.length / long.length >= 0.7;
+    });
     if (tight) return true;
 
     // Bare number H1 pattern (e.g. `# 3`) followed by matching H2 title
