@@ -469,11 +469,11 @@ function isChapter(
     const headingBody = numberedHeading ? numberedHeading[2].trim() : title;
     const normBody = normalizeArabic(headingBody);
 
-    // Case A: numbered heading — MUST match TOC by number AND title body
+    // Case A: numbered heading — must match TOC by number AND normalized body equality
+    // (fuzzy word-overlap is too loose; a chapter H1 should equal its TOC entry)
     if (headingNum !== null) {
       const tocByNum = toc.find((e) => e.number === headingNum);
-      if (tocByNum && fuzzyArabicMatch(tocByNum.title, headingBody)) return true;
-      // Numbered but doesn't match TOC → treat as lesson/subsection, not chapter
+      if (tocByNum && tocByNum.normalizedTitle === normBody) return true;
       return false;
     }
 
