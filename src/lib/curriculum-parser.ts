@@ -271,8 +271,8 @@ function extractTOC(lines: string[], headings: RawHeading[]): TOCEntry[] {
   if (!tocHeading) return entries;
 
   const tocStartLine = tocHeading.line; // 1-indexed
-  // Find the next heading after TOC
-  const nextHeading = headings.find((h) => h.line > tocStartLine);
+  // Find the next H1 after TOC (H2s inside TOC are category labels like "## أنشطة عددية")
+  const nextHeading = headings.find((h) => h.line > tocStartLine && h.rawLevel === 1);
   const tocEndLine = nextHeading ? nextHeading.line - 1 : lines.length;
 
   // Extract lines in the TOC region
