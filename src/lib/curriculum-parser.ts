@@ -278,53 +278,66 @@ function extractTOC(lines: string[], headings: RawHeading[]): TOCEntry[] {
   // Extract lines in the TOC region
   const tocLines = lines.slice(tocStartLine, tocEndLine); // already 0-indexed after slice
 
-  // Try table format first: | pageNum | title | category? |
-  const tableRowRegex = /^\|\s*(\d+)\s*\|\s*(.+?)\s*\|\s*(.*?)\s*\|/;
-  // Match chapter entries with optional number prefix: "N - title" or just "title"
-  const chapterEntryRegex = /^(\d+)\s*[-–]\s*(.+)/;
+  // Accept both 2-col `| page | title |` and 3-col `| page | title | category |` tables.
+  const tableRowRegex = /^\|\s*(\d+)\s*\|\s*(.+?)\s*\|(?:\s*(.*?)\s*\|)?\s*$/;
+  // "N - title", "N. title", "N) title", or plain "N title" (space separator)
+  const chapterEntryRegex = /^(\d+)\s*[-–.)\s]\s*(.+)/;
+  // Category markers appear as H2 above/between the table blocks
+  const categoryHeadingRegex = /^##\s+(.+?)\s*$/;
 
   let lastCategory = "";
 
   for (const line of tocLines) {
+    // Category H2 (e.g. `## أنشطة عددية`)
+    const catMatch = line.match(categoryHeadingRegex);
+    if (catMatch) {
+      lastCategory = catMatch[1].trim();
+      continue;
+    }
+
     const tableMatch = line.match(tableRowRegex);
     if (tableMatch) {
       const page = parseInt(tableMatch[1], 10);
       const rawTitle = tableMatch[2].trim();
-      const category = tableMatch[3].trim() || lastCategory;
+      const category = (tableMatch[3] ?? "").trim() || lastCategory;
       if (category) lastCategory = category;
 
-      // Skip non-chapter rows (toc header, "تقديم الكتاب", "استعمال الكتاب", etc.)
+      // Skip separator rows and non-chapter rows
       if (isNaN(page)) continue;
+      if (/^-+$/.test(rawTitle)) continue;
+      if (rawTitle.startsWith("•")) continue;
       if (CONFIG.frontMatterMarkers.some((m) => rawTitle.includes(m))) continue;
-      if (rawTitle.includes("مصادر")) continue;
+      if (rawTitle.includes("مصادر") || rawTitle.includes("تصحيحات")) continue;
 
-      // Parse "N - title" format
       const entryMatch = rawTitle.match(chapterEntryRegex);
       if (entryMatch) {
-        const num = parseInt(entryMatch[1], 10);
-        const title = entryMatch[2].trim();
         entries.push({
           page,
-          number: num,
-          title,
-          normalizedTitle: normalizeArabic(title),
+          number: parseInt(entryMatch[1], 10),
+          title: entryMatch[2].trim(),
+          normalizedTitle: normalizeArabic(entryMatch[2].trim()),
+          category,
+        });
+      } else {
+        // Untyped title (no leading number) — still a chapter row
+        entries.push({
+          page,
+          number: null,
+          title: rawTitle,
+          normalizedTitle: normalizeArabic(rawTitle),
           category,
         });
       }
       continue;
     }
 
-    // Try text-list format: "pageNum chapterNum title"
-    // e.g. "7 1 الأعداد الطبيعية والأعداد العشرية"
+    // Text-list format: "pageNum chapterNum title"
     const textMatch = line.trim().match(/^(\d+)\s+(\d+)\s+(.+)/);
     if (textMatch) {
       const page = parseInt(textMatch[1], 10);
       const num = parseInt(textMatch[2], 10);
       const title = textMatch[3].trim();
-
-      // Skip correction/appendix lines (e.g. "205 15 • تصحيحات")
       if (title.startsWith("•")) continue;
-
       entries.push({
         page,
         number: num,
