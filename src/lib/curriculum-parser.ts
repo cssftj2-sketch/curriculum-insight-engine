@@ -271,60 +271,73 @@ function extractTOC(lines: string[], headings: RawHeading[]): TOCEntry[] {
   if (!tocHeading) return entries;
 
   const tocStartLine = tocHeading.line; // 1-indexed
-  // Find the next heading after TOC
-  const nextHeading = headings.find((h) => h.line > tocStartLine);
+  // Find the next H1 after TOC (H2s inside TOC are category labels like "## أنشطة عددية")
+  const nextHeading = headings.find((h) => h.line > tocStartLine && h.rawLevel === 1);
   const tocEndLine = nextHeading ? nextHeading.line - 1 : lines.length;
 
   // Extract lines in the TOC region
   const tocLines = lines.slice(tocStartLine, tocEndLine); // already 0-indexed after slice
 
-  // Try table format first: | pageNum | title | category? |
-  const tableRowRegex = /^\|\s*(\d+)\s*\|\s*(.+?)\s*\|\s*(.*?)\s*\|/;
-  // Match chapter entries with optional number prefix: "N - title" or just "title"
-  const chapterEntryRegex = /^(\d+)\s*[-–]\s*(.+)/;
+  // Accept both 2-col `| page | title |` and 3-col `| page | title | category |` tables.
+  const tableRowRegex = /^\|\s*(\d+)\s*\|\s*(.+?)\s*\|(?:\s*(.*?)\s*\|)?\s*$/;
+  // "N - title", "N. title", "N) title", or plain "N title" (space separator)
+  const chapterEntryRegex = /^(\d+)\s*[-–.)\s]\s*(.+)/;
+  // Category markers appear as H2 above/between the table blocks
+  const categoryHeadingRegex = /^##\s+(.+?)\s*$/;
 
   let lastCategory = "";
 
   for (const line of tocLines) {
+    // Category H2 (e.g. `## أنشطة عددية`)
+    const catMatch = line.match(categoryHeadingRegex);
+    if (catMatch) {
+      lastCategory = catMatch[1].trim();
+      continue;
+    }
+
     const tableMatch = line.match(tableRowRegex);
     if (tableMatch) {
       const page = parseInt(tableMatch[1], 10);
       const rawTitle = tableMatch[2].trim();
-      const category = tableMatch[3].trim() || lastCategory;
+      const category = (tableMatch[3] ?? "").trim() || lastCategory;
       if (category) lastCategory = category;
 
-      // Skip non-chapter rows (toc header, "تقديم الكتاب", "استعمال الكتاب", etc.)
+      // Skip separator rows and non-chapter rows
       if (isNaN(page)) continue;
+      if (/^-+$/.test(rawTitle)) continue;
+      if (rawTitle.startsWith("•")) continue;
       if (CONFIG.frontMatterMarkers.some((m) => rawTitle.includes(m))) continue;
-      if (rawTitle.includes("مصادر")) continue;
+      if (rawTitle.includes("مصادر") || rawTitle.includes("تصحيحات")) continue;
 
-      // Parse "N - title" format
       const entryMatch = rawTitle.match(chapterEntryRegex);
       if (entryMatch) {
-        const num = parseInt(entryMatch[1], 10);
-        const title = entryMatch[2].trim();
         entries.push({
           page,
-          number: num,
-          title,
-          normalizedTitle: normalizeArabic(title),
+          number: parseInt(entryMatch[1], 10),
+          title: entryMatch[2].trim(),
+          normalizedTitle: normalizeArabic(entryMatch[2].trim()),
+          category,
+        });
+      } else {
+        // Untyped title (no leading number) — still a chapter row
+        entries.push({
+          page,
+          number: null,
+          title: rawTitle,
+          normalizedTitle: normalizeArabic(rawTitle),
           category,
         });
       }
       continue;
     }
 
-    // Try text-list format: "pageNum chapterNum title"
-    // e.g. "7 1 الأعداد الطبيعية والأعداد العشرية"
+    // Text-list format: "pageNum chapterNum title"
     const textMatch = line.trim().match(/^(\d+)\s+(\d+)\s+(.+)/);
     if (textMatch) {
       const page = parseInt(textMatch[1], 10);
       const num = parseInt(textMatch[2], 10);
       const title = textMatch[3].trim();
-
-      // Skip correction/appendix lines (e.g. "205 15 • تصحيحات")
       if (title.startsWith("•")) continue;
-
       entries.push({
         page,
         number: num,
@@ -449,25 +462,43 @@ function isChapter(
 ): boolean {
   // ── Strategy 1: TOC-anchored matching (strongest signal) ─────────────────
   if (toc.length > 0) {
-    const matchesToc = toc.some((entry) => fuzzyArabicMatch(entry.title, title));
-    if (matchesToc) return true;
+    // Strip leading chapter number if the heading starts with one
+    // (e.g. "1 الأعداد الطبيعية..." → number=1, body="الأعداد الطبيعية...")
+    const numberedHeading = title.match(/^(\d+)\s*[-–.)\s]\s*(.+)/);
+    const headingNum = numberedHeading ? parseInt(numberedHeading[1], 10) : null;
+    const headingBody = numberedHeading ? numberedHeading[2].trim() : title;
+    const normBody = normalizeArabic(headingBody);
 
-    // Year 2 pattern: `# N` (bare number H1) where N matches a TOC chapter number,
-    // AND the next heading is an H2 whose title matches the TOC entry.
+    // Case A: numbered heading — must match TOC by number AND normalized body equality
+    // (fuzzy word-overlap is too loose; a chapter H1 should equal its TOC entry)
+    if (headingNum !== null) {
+      const tocByNum = toc.find((e) => e.number === headingNum);
+      if (tocByNum && tocByNum.normalizedTitle === normBody) return true;
+      return false;
+    }
+
+    // Case B: un-numbered heading — normalized equality OR high-ratio substring
+    // (allows OCR-truncated titles like "متوازي المستطيلات" ≈ "متوازي المستطيلات والمكعب")
+    const tight = toc.some((e) => {
+      if (e.normalizedTitle === normBody) return true;
+      const a = e.normalizedTitle;
+      const b = normBody;
+      if (a.length < 6 || b.length < 6) return false;
+      const [short, long] = a.length < b.length ? [a, b] : [b, a];
+      return long.includes(short) && short.length / long.length >= 0.7;
+    });
+    if (tight) return true;
+
+    // Bare number H1 pattern (e.g. `# 3`) followed by matching H2 title
     if (/^\d+$/.test(title)) {
       const num = parseInt(title, 10);
       const tocEntry = toc.find((e) => e.number === num);
       if (tocEntry) {
-        // Check if next heading matches this TOC entry's title
         const nextH = headings.find((h) => h.line > raw.line);
-        if (nextH && fuzzyArabicMatch(tocEntry.title, nextH.title)) {
-          return true;
-        }
+        if (nextH && fuzzyArabicMatch(tocEntry.title, nextH.title)) return true;
       }
     }
 
-    // When TOC is available, do NOT fall through to the broad heuristic.
-    // This prevents false positives from subsection titles that contain academic keywords.
     return false;
   }
 
@@ -850,10 +881,34 @@ export function parseCurriculum(md: string): ParseResult {
   // Step 4: Build tree
   const root = buildTree(classified, bodyText);
 
+  // Step 4b: Merge consecutive duplicate chapters (OCR of running headers)
+  mergeDuplicateChapters(root);
+
   // Step 5: Compute stats
   const stats = computeStats(root, classified);
 
   return { root, stats };
+}
+
+function mergeDuplicateChapters(node: CurriculumNode) {
+  const kids = node.children;
+  for (let i = kids.length - 1; i > 0; i--) {
+    const cur = kids[i];
+    const prev = kids[i - 1];
+    if (
+      cur.type === "chapter" &&
+      prev.type === "chapter" &&
+      normalizeArabic(cur.title.replace(/^\d+\s*[-–.)\s]\s*/, "")) ===
+        normalizeArabic(prev.title.replace(/^\d+\s*[-–.)\s]\s*/, ""))
+    ) {
+      prev.children.push(...cur.children);
+      prev.images.push(...cur.images);
+      prev.paragraphs.push(...cur.paragraphs);
+      prev.content += "\n" + cur.content;
+      kids.splice(i, 1);
+    }
+  }
+  kids.forEach(mergeDuplicateChapters);
 }
 
 function computeStats(root: CurriculumNode, classified: ClassifiedHeading[]): ParseResult["stats"] {
