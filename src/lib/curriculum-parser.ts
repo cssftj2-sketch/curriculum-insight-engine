@@ -881,10 +881,34 @@ export function parseCurriculum(md: string): ParseResult {
   // Step 4: Build tree
   const root = buildTree(classified, bodyText);
 
+  // Step 4b: Merge consecutive duplicate chapters (OCR of running headers)
+  mergeDuplicateChapters(root);
+
   // Step 5: Compute stats
   const stats = computeStats(root, classified);
 
   return { root, stats };
+}
+
+function mergeDuplicateChapters(node: CurriculumNode) {
+  const kids = node.children;
+  for (let i = kids.length - 1; i > 0; i--) {
+    const cur = kids[i];
+    const prev = kids[i - 1];
+    if (
+      cur.type === "chapter" &&
+      prev.type === "chapter" &&
+      normalizeArabic(cur.title.replace(/^\d+\s*[-–.)\s]\s*/, "")) ===
+        normalizeArabic(prev.title.replace(/^\d+\s*[-–.)\s]\s*/, ""))
+    ) {
+      prev.children.push(...cur.children);
+      prev.images.push(...cur.images);
+      prev.paragraphs.push(...cur.paragraphs);
+      prev.content += "\n" + cur.content;
+      kids.splice(i, 1);
+    }
+  }
+  kids.forEach(mergeDuplicateChapters);
 }
 
 function computeStats(root: CurriculumNode, classified: ClassifiedHeading[]): ParseResult["stats"] {
