@@ -27,7 +27,25 @@ export function PageEditor({
       const parsed = parseCurriculum(md);
       const pages = curriculumToPages(parsed.root);
       actions.importCurriculumUnderPage(page.id, pages);
+      alert(
+        `تم الاستيراد ✓\nالأبواب: ${parsed.stats.chapters}\nالدروس: ${parsed.stats.lessons}\nالعناوين: ${parsed.stats.totalHeadings}\nالصور: ${parsed.stats.images}`,
+      );
+    } catch (e) {
+      alert("فشل الاستيراد: " + (e as Error).message);
     } finally {
+      setImporting(false);
+    }
+  };
+
+  const loadSample = async () => {
+    setImporting(true);
+    try {
+      const res = await fetch("/samples/math-1am.md");
+      if (!res.ok) throw new Error("تعذّر تحميل النموذج (" + res.status + ")");
+      const md = await res.text();
+      runImport(md);
+    } catch (e) {
+      alert("فشل تحميل النموذج: " + (e as Error).message);
       setImporting(false);
     }
   };
@@ -107,13 +125,20 @@ export function PageEditor({
           <p className="mb-3 text-xs text-muted-foreground">
             يحلّل الملف تلقائيًا (أبواب، دروس، أقسام) ويضيفها كصفحات فرعية هنا.
           </p>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => fileRef.current?.click()}
+              onClick={loadSample}
               disabled={importing}
               className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
             >
-              {importing ? "جارٍ الاستيراد..." : "رفع ملف .md"}
+              {importing ? "جارٍ الاستيراد..." : "⚡ تحميل النموذج (math-1am)"}
+            </button>
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={importing}
+              className="rounded-md border border-input px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
+            >
+              📁 رفع ملف .md
             </button>
             <input
               ref={fileRef}
