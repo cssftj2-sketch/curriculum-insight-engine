@@ -27,7 +27,25 @@ export function PageEditor({
       const parsed = parseCurriculum(md);
       const pages = curriculumToPages(parsed.root);
       actions.importCurriculumUnderPage(page.id, pages);
+      alert(
+        `تم الاستيراد ✓\nالأبواب: ${parsed.stats.chapters}\nالدروس: ${parsed.stats.lessons}\nالعناوين: ${parsed.stats.totalHeadings}\nالصور: ${parsed.stats.images}`,
+      );
+    } catch (e) {
+      alert("فشل الاستيراد: " + (e as Error).message);
     } finally {
+      setImporting(false);
+    }
+  };
+
+  const loadSample = async () => {
+    setImporting(true);
+    try {
+      const res = await fetch("/samples/math-1am.md");
+      if (!res.ok) throw new Error("تعذّر تحميل النموذج (" + res.status + ")");
+      const md = await res.text();
+      runImport(md);
+    } catch (e) {
+      alert("فشل تحميل النموذج: " + (e as Error).message);
       setImporting(false);
     }
   };
