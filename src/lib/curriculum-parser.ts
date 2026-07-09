@@ -462,25 +462,38 @@ function isChapter(
 ): boolean {
   // ── Strategy 1: TOC-anchored matching (strongest signal) ─────────────────
   if (toc.length > 0) {
-    const matchesToc = toc.some((entry) => fuzzyArabicMatch(entry.title, title));
-    if (matchesToc) return true;
+    // Strip leading chapter number if the heading starts with one
+    // (e.g. "1 الأعداد الطبيعية..." → number=1, body="الأعداد الطبيعية...")
+    const numberedHeading = title.match(/^(\d+)\s*[-–.)\s]\s*(.+)/);
+    const headingNum = numberedHeading ? parseInt(numberedHeading[1], 10) : null;
+    const headingBody = numberedHeading ? numberedHeading[2].trim() : title;
+    const normBody = normalizeArabic(headingBody);
 
-    // Year 2 pattern: `# N` (bare number H1) where N matches a TOC chapter number,
-    // AND the next heading is an H2 whose title matches the TOC entry.
+    // Case A: numbered heading — MUST match TOC by number AND title body
+    if (headingNum !== null) {
+      const tocByNum = toc.find((e) => e.number === headingNum);
+      if (tocByNum && fuzzyArabicMatch(tocByNum.title, headingBody)) return true;
+      // Numbered but doesn't match TOC → treat as lesson/subsection, not chapter
+      return false;
+    }
+
+    // Case B: un-numbered heading — require tight equality of normalized titles
+    // (prevents "الكتابات الكسرية" from matching "3 من الكتابات الكسرية إلى ...")
+    const tight = toc.some(
+      (e) => e.normalizedTitle === normBody || normalizeArabic(e.title) === normalizeArabic(title),
+    );
+    if (tight) return true;
+
+    // Bare number H1 pattern (e.g. `# 3`) followed by matching H2 title
     if (/^\d+$/.test(title)) {
       const num = parseInt(title, 10);
       const tocEntry = toc.find((e) => e.number === num);
       if (tocEntry) {
-        // Check if next heading matches this TOC entry's title
         const nextH = headings.find((h) => h.line > raw.line);
-        if (nextH && fuzzyArabicMatch(tocEntry.title, nextH.title)) {
-          return true;
-        }
+        if (nextH && fuzzyArabicMatch(tocEntry.title, nextH.title)) return true;
       }
     }
 
-    // When TOC is available, do NOT fall through to the broad heuristic.
-    // This prevents false positives from subsection titles that contain academic keywords.
     return false;
   }
 
